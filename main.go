@@ -273,10 +273,9 @@ func main() {
 			})
 		}
 
-		// Checking if todo id exists
+		// Checking if activity id exists
 		activityDB := new(Activity)
 		db.First(&activityDB, todo.ActivityID)
-
 		if int(activityDB.ID) != todo.ActivityID {
 			return c.JSON(http.StatusBadRequest, Response{
 				Status:  "Bad Request",
