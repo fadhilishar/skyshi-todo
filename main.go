@@ -202,7 +202,6 @@ func main() {
 			activityDB.Email = activity.Email
 		}
 		db.Save(&activityDB)
-		// db.Model(&activityDB).Update("title", activity.Title)
 
 		return c.JSON(http.StatusOK, Response{
 			Status:  "Success",
@@ -368,7 +367,6 @@ func main() {
 
 		todoDB.Title = todo.Title
 		db.Save(todoDB)
-		// db.Model(&todoDB).Update("title", todo.Title)
 
 		return c.JSON(http.StatusOK, Response{
 			Status:  "Success",
