@@ -3,11 +3,14 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/go-playground/validator"
+	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -58,9 +61,15 @@ func (cv *CustomValidator) Validate(i interface{}) error {
 }
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
 	// Using gorm, connecting to mysql
-	dsn := "root:123@tcp(127.0.0.1:3306)/skyshidb?charset=utf8mb4&parseTime=True&loc=Local"
+	// dsn := "root:123@tcp(mysqldb:3306)/skyshidb?charset=utf8mb4&parseTime=True&loc=Local"
+	dsn := fmt.Sprintf(`%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local`, os.Getenv("MYSQL_USER"), os.Getenv("MYSQL_PASSWORD"), os.Getenv("MYSQL_HOST"), "3306", os.Getenv("MYSQL_DBNAME"))
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	// db, err := gorm.Open("mysql", dsn)
 	if err != nil {
 		panic("failed to connect to mysql database")
 	}

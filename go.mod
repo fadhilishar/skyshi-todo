@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/go-playground/validator v9.31.0+incompatible
+	github.com/joho/godotenv v1.4.0
 	github.com/labstack/echo/v4 v4.9.1
 	gorm.io/driver/mysql v1.4.3
 	gorm.io/gorm v1.24.0
