@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -27,18 +28,39 @@ type (
 	}
 
 	Todo struct {
-		ID         int            `gorm:"primarykey" json:"id"`
-		ActivityID int            `json:"activity_group_id" validate:"required"`
-		Title      string         `json:"title" validate:"required"`
-		IsActive   string         `json:"is_active"`
-		Priority   string         `json:"priority"`
-		CreatedAt  time.Time      `json:"created_at"`
-		UpdatedAt  time.Time      `json:"updated_at"`
-		DeletedAt  gorm.DeletedAt `gorm:"index" json:"deleted_at"`
+		ID              int            `gorm:"primarykey" json:"id"`
+		ActivityGroupID int            `json:"activity_group_id" validate:"required"`
+		Title           string         `json:"title" validate:"required"`
+		IsActive        string         `json:"is_active" default:"1"`
+		Priority        string         `json:"priority" default:"very-high"`
+		CreatedAt       time.Time      `json:"created_at"`
+		UpdatedAt       time.Time      `json:"updated_at"`
+		DeletedAt       gorm.DeletedAt `gorm:"index" json:"deleted_at"`
+	}
+
+	GetTodoResponse struct {
+		ID              int            `gorm:"primarykey" json:"id"`
+		ActivityGroupID string         `json:"activity_group_id" validate:"required"`
+		Title           string         `json:"title" validate:"required"`
+		IsActive        bool           `json:"is_active" default:"1"`
+		Priority        string         `json:"priority" default:"very-high"`
+		CreatedAt       time.Time      `json:"created_at"`
+		UpdatedAt       time.Time      `json:"updated_at"`
+		DeletedAt       gorm.DeletedAt `gorm:"index" json:"deleted_at"`
+	}
+
+	CreateTodoReq struct {
+		ActivityGroupID string         `json:"activity_group_id" validate:"required"`
+		Title           string         `json:"title" validate:"required"`
+		IsActive        string         `json:"is_active" default:"1"`
+		Priority        string         `json:"priority" default:"very-high"`
+		CreatedAt       time.Time      `json:"created_at"`
+		UpdatedAt       time.Time      `json:"updated_at"`
+		DeletedAt       gorm.DeletedAt `gorm:"index" json:"deleted_at"`
 	}
 
 	TodoFilter struct {
-		ActivityID uint `json:"activity_group_id"`
+		ActivityGroupID uint `json:"activity_group_id"`
 	}
 
 	Response struct {
@@ -54,8 +76,7 @@ type (
 
 func (cv *CustomValidator) Validate(i interface{}) error {
 	if err := cv.validator.Struct(i); err != nil {
-		// Optionally, you could return the error to give each route more control over the status code
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		return err
 	}
 	return nil
 }
@@ -66,10 +87,8 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 	// Using gorm, connecting to mysql
-	// dsn := "root:123@tcp(mysqldb:3306)/skyshidb?charset=utf8mb4&parseTime=True&loc=Local"
 	dsn := fmt.Sprintf(`%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local`, os.Getenv("MYSQL_USER"), os.Getenv("MYSQL_PASSWORD"), os.Getenv("MYSQL_HOST"), "3306", os.Getenv("MYSQL_DBNAME"))
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
-	// db, err := gorm.Open("mysql", dsn)
 	if err != nil {
 		panic("failed to connect to mysql database")
 	}
@@ -229,18 +248,35 @@ func main() {
 		// Validate Request
 		activityID := c.QueryParam("activity_group_id")
 		activityIDInt := 0
-		todos := new([]Todo)
+		todos := []Todo{}
 		if activityID != "" {
 			activityIDInt, _ = strconv.Atoi(activityID)
 			db.Where("activity_id=?", activityIDInt).Find(&todos)
 		} else {
 			db.Find(&todos)
 		}
+		todosResp := []GetTodoResponse{}
+		for _, todo := range todos {
+			isActive := true
+			if todo.IsActive != "1" {
+				isActive = false
+			}
+			todosResp = append(todosResp, GetTodoResponse{
+				ID:              todo.ID,
+				ActivityGroupID: strconv.Itoa(todo.ActivityGroupID),
+				Title:           todo.Title,
+				IsActive:        isActive,
+				Priority:        todo.Priority,
+				CreatedAt:       todo.CreatedAt,
+				UpdatedAt:       todo.UpdatedAt,
+				DeletedAt:       todo.DeletedAt,
+			})
+		}
 
 		return c.JSON(http.StatusOK, Response{
 			Status:  "Success",
 			Message: "Success",
-			Data:    todos,
+			Data:    todosResp,
 		})
 	})
 
@@ -248,21 +284,36 @@ func main() {
 	todoItems.GET("/:id", func(c echo.Context) error {
 		id := c.Param("id")
 		todoDB := new(Todo)
-		db.First(&todoDB, id)
+		res := db.First(&todoDB, id)
 
-		idInt, _ := strconv.Atoi(id)
-		if int(todoDB.ID) != idInt {
-			return c.JSON(http.StatusNotFound, Response{
-				Status:  "Not Found",
-				Message: fmt.Sprintf("Todo with ID %v Not Found", id),
-				Data:    map[string]any{},
-			})
+		if res.Error != nil {
+			if errors.Is(res.Error, gorm.ErrRecordNotFound) {
+				return c.JSON(http.StatusNotFound, Response{
+					Status:  "Not Found",
+					Message: fmt.Sprintf("Todo with ID %v Not Found", id),
+					Data:    map[string]any{},
+				})
+			}
 		}
-
+		todoResp := GetTodoResponse{}
+		isActive := true
+		if todoDB.IsActive != "1" {
+			isActive = false
+		}
+		todoResp = GetTodoResponse{
+			ID:              todoDB.ID,
+			ActivityGroupID: strconv.Itoa(todoDB.ActivityGroupID),
+			Title:           todoDB.Title,
+			IsActive:        isActive,
+			Priority:        todoDB.Priority,
+			CreatedAt:       todoDB.CreatedAt,
+			UpdatedAt:       todoDB.UpdatedAt,
+			DeletedAt:       todoDB.DeletedAt,
+		}
 		return c.JSON(http.StatusOK, Response{
 			Status:  "Success",
 			Message: "Success",
-			Data:    todoDB,
+			Data:    todoResp,
 		})
 	})
 
@@ -274,25 +325,25 @@ func main() {
 			return err
 		}
 		if err := c.Validate(todo); err != nil {
-			return c.JSON(http.StatusBadRequest, Response{
-				Status:  "Bad Request",
-				Message: "title and activity_group_id cannot be null",
-				Data:    map[string]any{},
-			})
-		}
-
-		// Checking if activity id exists
-		activityDB := new(Activity)
-		db.First(&activityDB, todo.ActivityID)
-		if int(activityDB.ID) != todo.ActivityID {
-			return c.JSON(http.StatusBadRequest, Response{
-				Status:  "Bad Request",
-				Message: fmt.Sprintf("Activity with ID %v Not Found", todo.ActivityID),
-				Data:    map[string]any{},
-			})
+			for _, err2 := range err.(validator.ValidationErrors) {
+				errorField := ""
+				if err2.Field() == "Title" {
+					errorField = "title"
+				} else if err2.Field() == "ActivityGroupID" {
+					errorField = "activity_group_id"
+				}
+				return c.JSON(http.StatusBadRequest, Response{
+					Status:  "Bad Request",
+					Message: fmt.Sprintf("%v cannot be null", errorField),
+					Data:    map[string]any{},
+				})
+			}
 		}
 
 		// Inserting Todo
+		todo.IsActive = "1"
+		todo.Priority = "very-high"
+
 		result := db.Create(&todo)
 		if result.Error != nil {
 			return c.JSON(http.StatusBadRequest, Response{
@@ -301,10 +352,36 @@ func main() {
 				Data:    map[string]any{},
 			})
 		}
+
+		type todoResponse struct {
+			ID              int            `gorm:"primarykey" json:"id"`
+			ActivityGroupID int            `json:"activity_group_id" validate:"required"`
+			Title           string         `json:"title" validate:"required"`
+			IsActive        bool           `json:"is_active" default:"1"`
+			Priority        string         `json:"priority" default:"very-high"`
+			CreatedAt       time.Time      `json:"created_at"`
+			UpdatedAt       time.Time      `json:"updated_at"`
+			DeletedAt       gorm.DeletedAt `gorm:"index" json:"deleted_at"`
+		}
+		todoResp := todoResponse{}
+		isActive := false
+		if todo.IsActive == "1" {
+			isActive = true
+		}
+		todoResp = todoResponse{
+			ID:              todo.ID,
+			ActivityGroupID: todo.ActivityGroupID,
+			Title:           todo.Title,
+			IsActive:        isActive,
+			Priority:        todo.Priority,
+			CreatedAt:       todo.CreatedAt,
+			UpdatedAt:       todo.UpdatedAt,
+			DeletedAt:       todo.DeletedAt,
+		}
 		return c.JSON(http.StatusCreated, Response{
 			Status:  "Success",
 			Message: "Success",
-			Data:    todo,
+			Data:    todoResp,
 		})
 	})
 
@@ -337,9 +414,16 @@ func main() {
 		// Finding Todo
 		id := c.Param("id")
 		todoDB := new(Todo)
-		db.First(&todoDB, id)
-		idInt, _ := strconv.Atoi(id)
-		if int(todoDB.ID) != idInt {
+		res := db.First(&todoDB, id)
+		// idInt, _ := strconv.Atoi(id)
+		if res.Error != nil {
+			return c.JSON(http.StatusNotFound, Response{
+				Status:  "Not Found",
+				Message: fmt.Sprintf("Todo with ID %v Not Found", id),
+				Data:    map[string]any{},
+			})
+		}
+		if strconv.Itoa(todoDB.ID) != id {
 			return c.JSON(http.StatusNotFound, Response{
 				Status:  "Not Found",
 				Message: fmt.Sprintf("Todo with ID %v Not Found", id),
@@ -350,10 +434,10 @@ func main() {
 		// Updating Todo with req
 		todo := new(Todo)
 		if err := c.Bind(todo); err != nil {
-			return err
+
 		}
-		if todo.ActivityID != 0 {
-			todoDB.ActivityID = todo.ActivityID
+		if todo.ActivityGroupID != 0 {
+			todoDB.ActivityGroupID = todo.ActivityGroupID
 		}
 		if todo.IsActive != "" {
 			todoDB.IsActive = todo.IsActive
@@ -363,18 +447,13 @@ func main() {
 		}
 
 		// Validating Request
-		if todo.ActivityID == 0 {
-			todo.ActivityID = todoDB.ActivityID
-		}
-		if err := c.Validate(todo); err != nil {
-			return c.JSON(http.StatusBadRequest, Response{
-				Status:  "Bad Request",
-				Message: "title cannot be null",
-				Data:    map[string]any{},
-			})
+		if todo.ActivityGroupID == 0 {
+			todo.ActivityGroupID = todoDB.ActivityGroupID
 		}
 
-		todoDB.Title = todo.Title
+		if todo.Title != "" {
+			todoDB.Title = todo.Title
+		}
 		db.Save(todoDB)
 
 		return c.JSON(http.StatusOK, Response{
